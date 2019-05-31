@@ -1,9 +1,6 @@
 #include "common.h"
 #include "sock.h"
 
-struct connection *s_ctx;
-struct memory_management *memgt;
-struct qp_management *qpmgt;
 struct rdma_cm_event *event;
 struct rdma_event_channel *ec;
 struct rdma_cm_id *conn_id[128], *listener[128];
@@ -70,7 +67,8 @@ int resources_create(char *ip_address, struct rdma_management *rdma )
 	int 			mr_flags = 0;
 	int 			cq_size = 0;
 	int 			num_devices;
-	char *dev_name = "mlx5_1";
+	char *dev_name = NULL;
+	//char *dev_name = "mlx5_1";
 	
 	/* if client side */
 	if ( end == 0 ) {
@@ -112,39 +110,33 @@ int resources_create(char *ip_address, struct rdma_management *rdma )
 
 	/* search for the specific device we want to work with */
 	for (i = 0; i < num_devices; i ++) {
-		if (!dev_name) {
-			dev_name = strdup(ibv_get_device_name(dev_list[i])); 
-			fprintf(stdout, "device not specified, using first one found: %s\n", dev_name);
-		}
-		if (!strcmp(ibv_get_device_name(dev_list[i]), dev_name)) {
-			ib_dev = dev_list[i];
-			break;
-		}
+        ib_dev = dev_list[i];
+
+        /* get device handle */
+        rdma->s_ctx->ctx = ibv_open_device(ib_dev);
+        if (!rdma->s_ctx->ctx) {
+            fprintf(stderr, "failed to open device %s\n", dev_name);
+            continue;
+        }
+
+        /* query port properties  */
+        if (ibv_query_port(rdma->s_ctx->ctx, ib_port, &rdma->s_ctx->port_attr)) {
+            fprintf(stderr, "ibv_query_port on port %u failed\n", ib_port);
+            continue;
+        }
+        fprintf(stderr, "%s phy %d\n", ibv_get_device_name(dev_list[i]), rdma->s_ctx->port_attr.phys_state);
+        if( rdma->s_ctx->port_attr.state == IBV_PORT_ACTIVE ){
+            break;
+        }
 	}
 
-	/* if the device wasn't found in host */
-	if (!ib_dev) {
-		fprintf(stderr, "IB device %s wasn't found\n", dev_name);
-		return 1;
-	}
 
-	/* get device handle */
-	rdma->s_ctx->ctx = ibv_open_device(ib_dev);
-	if (!rdma->s_ctx->ctx) {
-		fprintf(stderr, "failed to open device %s\n", dev_name);
-		return 1;
-	}
-
-	/* We are now done with device list, free it */
-	ibv_free_device_list(dev_list);
-	dev_list = NULL;
-	ib_dev = NULL;
+//	/* We are now done with device list, free it */
+//	ibv_free_device_list(dev_list);
+//	dev_list = NULL;
+//	ib_dev = NULL;
 
 	/* query port properties  */
-	if (ibv_query_port(rdma->s_ctx->ctx, ib_port, &rdma->s_ctx->port_attr)) {
-		fprintf(stderr, "ibv_query_port on port %u failed\n", ib_port);
-		return 1;
-	}
 	if (ibv_query_gid(rdma->s_ctx->ctx, ib_port, ib_gid, &rdma->s_ctx->gid)) {
 		fprintf(stderr, "ibv_query_gid on port %u gid %d failed\n", ib_port, ib_gid);
 		return 1;
@@ -212,7 +204,9 @@ void fillAhAttr(ibv_ah_attr *attr, uint32_t remoteLid, uint8_t *remoteGid,
 	struct 	 ibv_qp *qp,
 	uint32_t remote_qpn,
 	uint16_t dlid,
-	uint8_t *remoteGid)
+	uint8_t *remoteGid,
+    struct connection *s_ctx
+	)
 {
 	struct ibv_qp_attr 	attr;
 	int 			flags;
@@ -282,7 +276,7 @@ void print_GID( uint8_t *a )
 	fprintf(stdout, "\n");
 }
 
- int connect_qp(struct ibv_qp *myqp, int id)
+int connect_qp(struct rdma_management *rdma, struct ibv_qp *myqp, int id)
 {
 	struct cm_con_data_t 	local_con_data;
 	struct cm_con_data_t 	remote_con_data;
@@ -309,12 +303,12 @@ void print_GID( uint8_t *a )
 
 	/* exchange using TCP sockets info required to connect QPs */
 	local_con_data.qp_num = myqp->qp_num;
-	local_con_data.lid    = s_ctx->port_attr.lid;
-	memcpy( local_con_data.remoteGid, s_ctx->gid.raw, 16*sizeof(uint8_t) );
+	local_con_data.lid    = rdma->s_ctx->port_attr.lid;
+	memcpy( local_con_data.remoteGid, rdma->s_ctx->gid.raw, 16*sizeof(uint8_t) );
 
-	fprintf(stdout, "\nLocal LID        = 0x%x\n", s_ctx->port_attr.lid);
+	fprintf(stdout, "\nLocal LID        = 0x%x\n", rdma->s_ctx->port_attr.lid);
 	fprintf(stdout, "local QP number = 0x%x\n", myqp->qp_num);
-	fprintf(stdout, "local LID       = 0x%x\n", s_ctx->port_attr.lid);
+	fprintf(stdout, "local LID       = 0x%x\n", rdma->s_ctx->port_attr.lid);
 	print_GID( local_con_data.remoteGid );
 	
 	if (sock_sync_data(sock, (end==0), sizeof(struct cm_con_data_t), &local_con_data, &tmp_con_data) < 0) {
@@ -331,7 +325,7 @@ void print_GID( uint8_t *a )
 	print_GID( remote_con_data.remoteGid );
 
 	/* modify the QP to RTR */
-	rc = modify_qp_to_rtr(myqp, remote_con_data.qp_num, remote_con_data.lid, remote_con_data.remoteGid);
+	rc = modify_qp_to_rtr(myqp, remote_con_data.qp_num, remote_con_data.lid, remote_con_data.remoteGid, rdma->s_ctx);
 	if (rc) {
 		fprintf(stderr, "failed to modify QP state from RESET to RTS\n");
 		return rc;
@@ -376,8 +370,8 @@ void build_connection(struct rdma_management *rdma, int tid)
 	memset(qp_attr, 0, sizeof(*qp_attr));
 	
 	qp_attr->qp_type = IBV_QPT_RC;
-	qp_attr->send_cq = s_ctx->cq_data[tid];
-	qp_attr->recv_cq = s_ctx->cq_data[tid];
+	qp_attr->send_cq = rdma->s_ctx->cq_data[tid];
+	qp_attr->recv_cq = rdma->s_ctx->cq_data[tid];
 
 	qp_attr->cap.max_send_wr = qp_size;
 	qp_attr->cap.max_recv_wr = qp_size;
@@ -389,8 +383,8 @@ void build_connection(struct rdma_management *rdma, int tid)
 	
 	struct ibv_qp *myqp = ibv_create_qp( rdma->s_ctx->pd, qp_attr );
 	rdma->qpmgt->qp[tid] = myqp;
-	connect_qp( myqp, tid );
-	
+	connect_qp( rdma, myqp, tid );
+
 }
 
 void build_context(struct connection *s_ctx)
@@ -541,7 +535,7 @@ int destroy_connection( struct rdma_management *rdma )
 	TEST_NZ(ibv_dealloc_pd(rdma->s_ctx->pd));
 	TEST_NZ(ibv_close_device(rdma->s_ctx->ctx));
 	//close(sock);
-	free(rdma->s_ctx); s_ctx = NULL;
+	free(rdma->s_ctx);
 	return 0;
 }
 

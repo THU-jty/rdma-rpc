@@ -208,14 +208,20 @@ void *completion_backup(void *rdma)
 // 	}
 // 	out.close();
 // 	printf("data into disk\n");
-	return;
+	return NULL;
 }
 
 struct rdma_management rdma[10];
 
-int main()
+int main( int argc, char **argv )
 {
-	struct ScatterList SL;
+    //ib_gid = atoi(argv[1]);
+    FILE *fp = NULL;
+    fp = fopen("config", "r");
+    fscanf(fp, "%d", &ib_gid);
+    fclose(fp);
+
+    struct ScatterList SL;
 	SL.address = ( void * )malloc( RDMA_BUFFER_SIZE );
 	SL.length = RDMA_BUFFER_SIZE;
 	initialize_backup( SL.address, SL.length, &rdma[0] );

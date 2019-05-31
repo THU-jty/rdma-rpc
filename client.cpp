@@ -373,6 +373,12 @@ int main( int argc, char **argv )
 		printf("error input\n");
 		exit(1);
 	}
+    //ib_gid = atoi(argv[2]);
+    FILE *fp = NULL;
+    fp = fopen("config", "r");
+    fscanf(fp, "%d", &ib_gid);
+    fclose(fp);
+
 	SL.address = ( void * )malloc( RDMA_BUFFER_SIZE );
 	SL.length = RDMA_BUFFER_SIZE;
 	initialize_active( SL.address, SL.length, argv[1], &rdma[0] );

@@ -148,6 +148,7 @@ extern int qp_size_limit;
 extern int concurrency_num;
 extern int memory_reback_number;
 extern ull magic_number;
+extern int ib_gid;
 /* active */
 extern int resend_limit;
 extern int request_size;
@@ -164,7 +165,7 @@ extern int request_pool_size;
 
 int resources_create(char *ip_address, struct rdma_management *rdma );
 void print_GID( uint8_t *a );
-int connect_qp(struct ibv_qp *myqp, int id);
+int connect_qp(struct rdma_management *rdma, struct ibv_qp *myqp, int id);
 void build_connection(struct rdma_management *rdma, int tid);
 void build_context(struct connection *s_ctx);
 void register_memory( struct memory_management *memgt, struct connection *s_ctx, int tid );
