@@ -149,6 +149,8 @@ extern int concurrency_num;
 extern int memory_reback_number;
 extern ull magic_number;
 extern int ib_gid;
+extern int test_count_per_thread;
+extern int thread_number;
 /* active */
 extern int resend_limit;
 extern int request_size;

@@ -63,14 +63,17 @@ void initialize_active( void *address, int length, char *ip_address, struct rdma
 	struct ibv_wc wc;
 	resources_create( ip_address, rdma );
 	
-	if(1){
-		post_recv( rdma, 0, 20, 0, sizeof(struct ibv_mr));
-		int tmp = get_wc( rdma, &wc );
-	}
+	post_recv( rdma, 0, 20, 0, sizeof(struct ibv_mr));
+	int tmp = get_wc( rdma, &wc );
 	
 	memcpy( &rdma->memgt->peer_mr, rdma->memgt->recv_buffer, sizeof(struct ibv_mr) );
 	printf("peer add: %p length: %d\n", rdma->memgt->peer_mr.addr,
 	rdma->memgt->peer_mr.length);
+	
+	post_send( rdma, 0, 50, 0, sizeof(struct ibv_mr), 0 );
+	
+	printf("add: %p length: %d\n", rdma->memgt->rdma_recv_mr->addr,
+	rdma->memgt->rdma_recv_mr->length);
 
 	fprintf(stderr, "create pthread pool end\n");
 }
@@ -91,280 +94,213 @@ void finalize_active( struct rdma_management *rdma )
 	fprintf(stderr, "finalize end\n");
 }
 
-// void put()
-// {
-// 	post_recv( 0, 0, 0, 1024*1024 );
-	
-// 	int id, len;
-// 	int i, j;
-// 	string s;
-// 	cin >> id >> s;
-// 	len = s.length();
-// 	char *p = memgt->rdma_send_region;
-// 	memcpy( p, &id, sizeof(int) ); p += sizeof(int);
-// 	memcpy( p, &len, sizeof(int) ); p += sizeof(int);
-// 	s.copy( p, len, 0 );
-	
-// 	struct ibv_send_wr wr, *bad_wr = NULL;
-// 	struct ibv_sge sge[10];
-	
-// 	memset(&wr, 0, sizeof(wr));
-	
-// 	wr.wr_id = 0;
-// 	wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
-// 	wr.send_flags = IBV_SEND_SIGNALED;
-// 	wr.wr.rdma.remote_addr = (uintptr_t)memgt->peer_mr.addr;
-// 	wr.wr.rdma.rkey = memgt->peer_mr.rkey;
-	
-// 	wr.imm_data = 1;
-// 	wr.sg_list = sge;
-// 	wr.num_sge = 1;
-	
-// 	sge[0].addr = (uintptr_t)memgt->rdma_send_region;
-// 	sge[0].length = len+2*sizeof(int);
-// 	sge[0].lkey = memgt->rdma_send_mr->lkey;
+struct rdma_management rdma[100];
 
-// redo:	
-// 	TEST_NZ(ibv_post_send(qpmgt->qp[0], &wr, &bad_wr));
-	
-// 	struct ibv_cq *cq;
-// 	struct ibv_wc *wc, *wc_array; 
-// 	wc_array = ( struct ibv_wc * )malloc( sizeof(struct ibv_wc)*6 );
-// 	int fl = 0;
-// 	cq = s_ctx->cq_data[0];
-// 	while(!fl){
-// 		int num = ibv_poll_cq(cq, 5, wc_array);
-// 		if( num < 0 ) continue;
-// 		for( int k = 0; k < num; k ++ ){
-// 			wc = &wc_array[k];
-// 			if( wc->opcode == IBV_WC_RDMA_WRITE ){
-// 				if( wc->status != IBV_WC_SUCCESS ){
-// 					printf("write error redo now!\n");
-// 					//goto redo;
-// 				}
-// 				continue;
-// 			}
-// 			if( wc->opcode == IBV_WC_RECV ){
-// 				if( wc->status != IBV_WC_SUCCESS ){
-// 					printf("recv error redo now!\n");
-// 					exit(1);
-// 				}
-// 				fl = 1;
-// 			}
-// 		}
-// 	}
-// 	cout << "put ok" << endl;
-// }
+struct mythread
+{
+	pthread_t t;
+	pthread_mutex_t mutex;
+	pthread_cond_t cond;
+	int req_count;
+	double avglat;
+}Thread[100];
 
-// void get()
-// {
-// 	post_recv( 0, 0, 0, 1024*1024 );
-	
-// 	int id, len;
-// 	int i, j;
-// 	string s;
-// 	cin >> id;
-// 	char *p = memgt->rdma_send_region;
-// 	memcpy( p, &id, sizeof(int) ); p += sizeof(int);
-	
-// 	struct ibv_send_wr wr, *bad_wr = NULL;
-// 	struct ibv_sge sge[10];
-	
-// 	memset(&wr, 0, sizeof(wr));
-	
-// 	wr.wr_id = 0;
-// 	wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
-// 	wr.send_flags = IBV_SEND_SIGNALED;
-// 	wr.wr.rdma.remote_addr = (uintptr_t)memgt->peer_mr.addr;
-// 	wr.wr.rdma.rkey = memgt->peer_mr.rkey;
-	
-// 	wr.imm_data = 2;
-// 	wr.sg_list = sge;
-// 	wr.num_sge = 1;
-	
-// 	sge[0].addr = (uintptr_t)memgt->rdma_send_region;
-// 	sge[0].length = sizeof(int);
-// 	sge[0].lkey = memgt->rdma_send_mr->lkey;
+pthread_cond_t share_cond;
 
-// redo:	
-// 	TEST_NZ(ibv_post_send(qpmgt->qp[0], &wr, &bad_wr));
-	
-// 	struct ibv_cq *cq;
-// 	struct ibv_wc *wc, *wc_array; 
-// 	wc_array = ( struct ibv_wc * )malloc( sizeof(struct ibv_wc)*105 );
-// 	int fl = 0;
-// 	cq = s_ctx->cq_data[0];
-// 	while(!fl){
-// 		int num = ibv_poll_cq(cq, 100, wc_array);
-// 		if( num < 0 ) continue;
-// 		for( int k = 0; k < num; k ++ ){
-// 			wc = &wc_array[k];
-// 			if( wc->opcode == IBV_WC_RDMA_WRITE ){
-// 				if( wc->status != IBV_WC_SUCCESS ){
-// 					printf("write error redo now!\n");
-// 					//goto redo;
-// 				}
-// 				continue;
-// 			}
-// 			if( wc->opcode == IBV_WC_RECV ){
-// 				if( wc->status != IBV_WC_SUCCESS ){
-// 					printf("recv error redo now!\n");
-// 					exit(1);
-// 				}
-// 				fl = 1;
-// 			}
-// 		}
-// 	}
-// 	cout << "get ok" << endl;
-// 	p = memgt->recv_buffer;
-// 	memcpy( &len, p, sizeof(int) ); p += sizeof(int);
-// 	s.clear();
-// 	for( i = 0; i < len; i ++ ){
-// 		s.push_back( p[i] );
-// 	}
-// 	cout << "value: " << s << endl;
-// }
+int tmp[100];
 
-// void del()
-// {
-// 	post_recv( 0, 0, 0, 1024*1024 );
+void working_fasst( void *f )
+{
+	int id = *(int *)f;
+	printf("testing thread %d ready\n", id);
+	struct rdma_management *rdm = rdma[id];
+	struct mythread *my = Thread[id];
+	pthread_mutex_init( &my->mutex, NULL );
+	pthread_cond_init( &my->cond, NULL );
+	pthread_mutex_lock( &my->mutex );
+	pthread_cond_wait( &share_cond, &my->mutex );
+	pthread_mutex_unlock( &my->mutex );
+	printf("testing thread %d begin\n", id);
 	
-// 	int id, len;
-// 	int i, j;
-// 	string s;
-// 	cin >> id;
-// 	char *p = memgt->rdma_send_region;
-// 	memcpy( p, &id, sizeof(int) ); p += sizeof(int);
-	
-// 	struct ibv_send_wr wr, *bad_wr = NULL;
-// 	struct ibv_sge sge[10];
-	
-// 	memset(&wr, 0, sizeof(wr));
-	
-// 	wr.wr_id = 0;
-// 	wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
-// 	wr.send_flags = IBV_SEND_SIGNALED;
-// 	wr.wr.rdma.remote_addr = (uintptr_t)memgt->peer_mr.addr;
-// 	wr.wr.rdma.rkey = memgt->peer_mr.rkey;
-	
-// 	wr.imm_data = 3;
-// 	wr.sg_list = sge;
-// 	wr.num_sge = 1;
-	
-// 	sge[0].addr = (uintptr_t)memgt->rdma_send_region;
-// 	sge[0].length = sizeof(int);
-// 	sge[0].lkey = memgt->rdma_send_mr->lkey;
+	double sum = 0.0;
+	int count = test_count_per_thread;
+	double st = elapse_sec(), ed;
+	for( int i = 0; i < 10; i ++ ){
+		struct ibv_recv_wr wr, *bad_wr = NULL;
+		struct ibv_sge sge;
+		wr.wr_id = i;
+		wr.next = NULL;
+		wr.sg_list = &sge;
+		wr.num_sge = 1;
+		
+		sge.addr = (uintptr_t)rdma->memgt->recv_buffer+request_size*i;
+		sge.length = request_size;
+		sge.lkey = rdma->memgt->recv_mr->lkey;
+		
+		TEST_NZ(ibv_post_recv(rdma->qpmgt->qp[0], &wr, &bad_wr));
+	}
+		
+	for( int i = 0; i < count; i ++ ){
+		double st, ed;
+		//send a req
+		struct ibv_send_wr wr, *bad_wr = NULL;
+		struct ibv_sge sge;
+		memset(&wr, 0, sizeof(wr));
+		wr.wr_id = 0;
+		wr.opcode = IBV_WR_SEND;
+		wr.sg_list = &sge;
+		wr.send_flags = IBV_SEND_SIGNALED;
+		wr.num_sge = 1;
+		
+		sge.addr = (uintptr_t)rdma->memgt->send_buffer;
+		sge.length = request_size;
+		sge.lkey = rdma->memgt->send_mr->lkey;
+		
+		TEST_NZ(ibv_post_send(rdma->qpmgt->qp[0], &wr, &bad_wr));
+		
+		//polling for a recv
+		struct ibv_cq *cq;
+		struct ibv_wc *wc, *wc_array; 
+		wc_array = ( struct ibv_wc * )malloc( sizeof(struct ibv_wc)*20 );
+		int fl = 0;
+		cq = rdm->s_ctx->cq_data[0];
+		while(!fl){
+			int num = ibv_poll_cq(cq, 10, wc_array);
+			if( num < 0 ) continue;
+			for( int k = 0; k < num; k ++ ){
+				wc = &wc_array[k];
+				if( wc->opcode == IBV_WC_RECV ){
+					if( wc->status != IBV_WC_SUCCESS ){
+						printf("recv error %d!\n", id);
+						
+					}
+					fl = 1;
+					struct ibv_recv_wr wr, *bad_wr = NULL;
+					struct ibv_sge sge;
+					wr.wr_id = wc->wr_id;
+					wr.next = NULL;
+					wr.sg_list = &sge;
+					wr.num_sge = 1;
+					
+					sge.addr = (uintptr_t)rdma->memgt->recv_buffer+request_size*wc->wr_id;
+					sge.length = request_size;
+					sge.lkey = rdma->memgt->recv_mr->lkey;
+					
+					TEST_NZ(ibv_post_recv(rdma->qpmgt->qp[0], &wr, &bad_wr));
+				}
+			}
+		}
+		ed = elapse_sec();
+		sum += ed-st;
+		st = ed;
+	}
+	my->avglat = sum/test_count_per_thread;
+	printf("test thread %d over\n", id);
+	return ;
+}
 
-// redo:	
-// 	TEST_NZ(ibv_post_send(qpmgt->qp[0], &wr, &bad_wr));
+void working_fasst( void *f )
+{
+	int id = *(int *)f;
+	printf("testing thread %d ready\n", id);
+	struct rdma_management *rdm = rdma[id];
+	struct mythread *my = Thread[id];
+	pthread_mutex_init( &my->mutex, NULL );
+	pthread_cond_init( &my->cond, NULL );
+	pthread_mutex_lock( &my->mutex );
+	pthread_cond_wait( &share_cond, &my->mutex );
+	pthread_mutex_unlock( &my->mutex );
+	printf("testing thread %d begin\n", id);
 	
-// 	struct ibv_cq *cq;
-// 	struct ibv_wc *wc, *wc_array; 
-// 	wc_array = ( struct ibv_wc * )malloc( sizeof(struct ibv_wc)*105 );
-// 	int fl = 0;
-// 	cq = s_ctx->cq_data[0];
-// 	while(!fl){
-// 		int num = ibv_poll_cq(cq, 100, wc_array);
-// 		if( num < 0 ) continue;
-// 		for( int k = 0; k < num; k ++ ){
-// 			wc = &wc_array[k];
-// 			if( wc->opcode == IBV_WC_RDMA_WRITE ){
-// 				if( wc->status != IBV_WC_SUCCESS ){
-// 					printf("write error redo now!\n");
-// 					goto redo;
-// 				}
-// 				continue;
-// 			}
-// 			if( wc->opcode == IBV_WC_RECV ){
-// 				if( wc->status != IBV_WC_SUCCESS ){
-// 					printf("recv error redo now!\n");
-// 					exit(1);
-// 				}
-// 				fl = 1;
-// 			}
-// 		}
-// 	}
-// 	cout << "delete ok" << endl;
-// }
-
-// void qry()
-// {
-// 	post_recv( 0, 0, 0, 1024*1024 );
-	
-// 	int st, ed, len, i, j;
-// 	string s;
-// 	cin >> st >> ed;
-// 	if( st > ed ) swap( st, ed );
-// 	char *p = memgt->rdma_send_region;
-// 	memcpy( p, &st, sizeof(int) ); p += sizeof(int);
-// 	memcpy( p, &ed, sizeof(int) ); p += sizeof(int);
-	
-// 	struct ibv_send_wr wr, *bad_wr = NULL;
-// 	struct ibv_sge sge[10];
-	
-// 	memset(&wr, 0, sizeof(wr));
-	
-// 	wr.wr_id = 0;
-// 	wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
-// 	wr.send_flags = IBV_SEND_SIGNALED;
-// 	wr.wr.rdma.remote_addr = (uintptr_t)memgt->peer_mr.addr;
-// 	wr.wr.rdma.rkey = memgt->peer_mr.rkey;
-	
-// 	wr.imm_data = 4;
-// 	wr.sg_list = sge;
-// 	wr.num_sge = 1;
-	
-// 	sge[0].addr = (uintptr_t)memgt->rdma_send_region;
-// 	sge[0].length = sizeof(int)*2;
-// 	sge[0].lkey = memgt->rdma_send_mr->lkey;
-
-// redo:	
-// 	TEST_NZ(ibv_post_send(qpmgt->qp[0], &wr, &bad_wr));
-	
-// 	struct ibv_cq *cq;
-// 	struct ibv_wc *wc, *wc_array; 
-// 	wc_array = ( struct ibv_wc * )malloc( sizeof(struct ibv_wc)*105 );
-// 	int fl = 0;
-// 	cq = s_ctx->cq_data[0];
-// 	while(!fl){
-// 		int num = ibv_poll_cq(cq, 100, wc_array);
-// 		if( num < 0 ) continue;
-// 		for( int k = 0; k < num; k ++ ){
-// 			wc = &wc_array[k];
-// 			if( wc->opcode == IBV_WC_RDMA_WRITE ){
-// 				if( wc->status != IBV_WC_SUCCESS ){
-// 					printf("write error redo now!\n");
-// 					goto redo;
-// 				}
-// 				continue;
-// 			}
-// 			if( wc->opcode == IBV_WC_RECV ){
-// 				if( wc->status != IBV_WC_SUCCESS ){
-// 					printf("recv error redo now!\n");
-// 					exit(1);
-// 				}
-// 				fl = 1;
-// 			}
-// 		}
-// 	}
-// 	cout << "query ok" << endl;
-// 	p = memgt->recv_buffer;
-// 	memcpy( &len, p, sizeof(int) ); p += sizeof(int);
-// 	printf("%d result(s)\n", len);
-// 	//cout << len << endl;
-// 	for( i = 0; i < len; i ++ ){
-// 		int x = (*(int*)p); p += sizeof(int);
-// 		int y = (*(int*)p); p += sizeof(int);
-// 		s.clear();
-// 		for( j = 0; j < y; j ++ ){
-// 			s.push_back( p[j] );
-// 		}
-// 		p += y;
-// 		cout << "key: " << x << " value: " << s << endl;
-// 	}
-// }
-
-struct rdma_management rdma[10];
+	double sum = 0.0;
+	int count = test_count_per_thread;
+	double st = elapse_sec(), ed;
+		
+	for( int i = 0; i < count; i ++ ){
+		double st, ed;
+		//read key
+		struct ibv_send_wr wr, *bad_wr = NULL;
+		struct ibv_sge sge;
+		memset(&wr, 0, sizeof(wr));
+		wr.wr_id = 0;
+		wr.opcode = IBV_WR_RDMA_READ;
+		wr.sg_list = &sge;
+		wr.send_flags = IBV_SEND_SIGNALED;
+		wr.num_sge = 1;
+		wr.wr.rdma.remote_addr = (uintptr_t)rdma->memgt->peer_mr.addr;
+		wr.wr.rdma.rkey = rd_memgt->peer_mr.rkey;
+		
+		sge.addr = (uintptr_t)rdma->memgt->recv_buffer;
+		sge.length = 8;
+		sge.lkey = rdma->memgt->recv_mr->lkey;
+		
+		TEST_NZ(ibv_post_send(rdma->qpmgt->qp[0], &wr, &bad_wr));
+		
+		//polling for a read CQ
+		struct ibv_cq *cq;
+		struct ibv_wc *wc, *wc_array; 
+		wc_array = ( struct ibv_wc * )malloc( sizeof(struct ibv_wc)*20 );
+		int fl = 0;
+		cq = rdm->s_ctx->cq_data[0];
+		while(!fl){
+			int num = ibv_poll_cq(cq, 10, wc_array);
+			if( num < 0 ) continue;
+			for( int k = 0; k < num; k ++ ){
+				wc = &wc_array[k];
+				if( wc->opcode == IBV_WR_RDMA_READ ){
+					if( wc->status != IBV_WC_SUCCESS ){
+						printf("recv error %d!\n", id);
+						
+					}
+				}
+			}
+		}
+		
+		// struct ibv_send_wr wr, *bad_wr = NULL;
+		// struct ibv_sge sge;
+		memset(&wr, 0, sizeof(wr));
+		wr.wr_id = 0;
+		wr.opcode = IBV_WR_RDMA_READ;
+		wr.sg_list = &sge;
+		wr.send_flags = IBV_SEND_SIGNALED;
+		wr.num_sge = 1;
+		wr.wr.rdma.remote_addr = (uintptr_t)rdma->memgt->peer_mr.addr+request_size;
+		wr.wr.rdma.rkey = rd_memgt->peer_mr.rkey;
+		
+		sge.addr = (uintptr_t)rdma->memgt->recv_buffer;
+		sge.length = request_size;
+		sge.lkey = rdma->memgt->recv_mr->lkey;
+		
+		TEST_NZ(ibv_post_send(rdma->qpmgt->qp[0], &wr, &bad_wr));
+		
+		//polling for a read CQ
+		// struct ibv_cq *cq;
+		// struct ibv_wc *wc, *wc_array; 
+		wc_array = ( struct ibv_wc * )malloc( sizeof(struct ibv_wc)*20 );
+		fl = 0;
+		cq = rdm->s_ctx->cq_data[0];
+		while(!fl){
+			int num = ibv_poll_cq(cq, 10, wc_array);
+			if( num < 0 ) continue;
+			for( int k = 0; k < num; k ++ ){
+				wc = &wc_array[k];
+				if( wc->opcode == IBV_WR_RDMA_READ ){
+					if( wc->status != IBV_WC_SUCCESS ){
+						printf("recv error %d!\n", id);
+						
+					}
+				}
+			}
+		}
+		
+		ed = elapse_sec();
+		sum += ed-st;
+		st = ed;
+	}
+	my->avglat = sum/test_count_per_thread;
+	printf("test thread %d over\n", id);
+	return ;
+}
 
 int main( int argc, char **argv )
 {
@@ -374,23 +310,34 @@ int main( int argc, char **argv )
 		exit(1);
 	}
     //ib_gid = atoi(argv[2]);
-    FILE *fp = NULL;
-    fp = fopen("config", "r");
-    fscanf(fp, "%d", &ib_gid);
-    fclose(fp);
-
-	SL.address = ( void * )malloc( RDMA_BUFFER_SIZE );
-	SL.length = RDMA_BUFFER_SIZE;
-	initialize_active( SL.address, SL.length, argv[1], &rdma[0] );
-	// while(1){
-	// 	string s;
-	// 	cin >> s;
-	// 	if( s == "exit" ) break;
-	// 	else if( s == "put" ) put();
-	// 	else if( s == "get" ) get();
-	// 	else if( s == "del" ) del();
-	// 	else if( s == "qry" ) qry();
-	// 	else puts("wrong input\n");
-	// }
-	finalize_active( &rdma[0] );
+    get_args();
+	
+	for( int i = 0; i < thread_number; i ++ ){
+		SL.address = ( void * )malloc( RDMA_BUFFER_SIZE );
+		SL.length = RDMA_BUFFER_SIZE;
+		initialize_active( SL.address, SL.length, argv[1], &rdma[i] );
+		tmp[i] = i;
+		pthread_create( &Thread[i]->t, NULL, working_fasst, (void*)&tmp[i] );
+		//pthread_create( &Thread[i]->t, NULL, working_pilaf, (void*)&tmp[i] );
+	}
+	
+	pthread_cond_init( &share_cond, NULL );
+	sleep(1);
+	pthread_cond_broadcast( &share_cond );
+	double st = elapse_sec(), ed;
+	double tot = 0.0;
+	for( int i = 0; i < thread_number; i ++ ){
+		pthread_join( Thread[i]->t, NULL );
+	}
+	ed = elapse_sec();
+	
+	for( int i = 0; i < thread_number; i ++ ){
+		finalize_active( &rdma[i] );
+		tot += Thread[i]->avglat;
+	}
+	
+	tot /= thread_number;
+	int num = thread_number*test_count_per_thread;
+	printf("test req %d IOPS %.2fk/s latency %.fus\n", 
+	num, num*1.0/(ed-st)*1e3, tot)
 }

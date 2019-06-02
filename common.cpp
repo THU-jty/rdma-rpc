@@ -9,7 +9,7 @@ int end;//active 0 backup 1
 int bind_port = 45679;
 int BUFFER_SIZE = 2*1024*1024;
 int BUFFER_SIZE_EXTEND = 1*1024*1024;
-int RDMA_BUFFER_SIZE = 1024*1024*64;
+int RDMA_BUFFER_SIZE = 1024*1024;
 int thread_number = 1;
 int connect_number = 1;
 int ctrl_number = 0;
@@ -23,6 +23,8 @@ int memory_reback_number = 20;
 ull magic_number = 0x0145145145145145;
 int ib_port = 1;
 int ib_gid = 3;
+int test_count_per_thread = 1000;
+int thread_number = 8;
 
 int buffer_per_size;
 
@@ -32,7 +34,7 @@ int package_pool_size = 8000;
 int full_time_interval = 1000;//us 满时重传时间间隔
 
 int resend_limit = 3;
-int request_size = 256*1024;//B
+int request_size = 4*1024;//B
 int scatter_size = 4;
 int package_size = 4; 
 int request_buffer_size = 300000;
@@ -418,27 +420,23 @@ void build_context(struct connection *s_ctx)
 
 void register_memory( struct memory_management *memgt, struct connection *s_ctx, int tid )// 0 active 1 backup
 {
-	memgt->recv_buffer = (char *)malloc(BUFFER_SIZE+BUFFER_SIZE_EXTEND);
+	memgt->recv_buffer = (char *)malloc(BUFFER_SIZE);
 	TEST_Z( memgt->recv_mr = ibv_reg_mr( s_ctx->pd, memgt->recv_buffer,
-	BUFFER_SIZE+BUFFER_SIZE_EXTEND, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE ) );
+	BUFFER_SIZE, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE ) );
 	
-	memgt->send_buffer = (char *)malloc(BUFFER_SIZE+BUFFER_SIZE_EXTEND);
+	memgt->send_buffer = (char *)malloc(BUFFER_SIZE);
 	TEST_Z( memgt->send_mr = ibv_reg_mr( s_ctx->pd, memgt->send_buffer,
-	BUFFER_SIZE+BUFFER_SIZE_EXTEND, IBV_ACCESS_LOCAL_WRITE ) );
+	BUFFER_SIZE, IBV_ACCESS_LOCAL_WRITE ) );
 	
-	buffer_per_size = 4+4+(sizeof(void *)+sizeof(struct ScatterList))*scatter_size*package_size;
 	//buffer_per_size = request_size;
 	
-	if( tid == 1 ){//active don't need recv
-		TEST_Z( memgt->rdma_recv_mr = ibv_reg_mr( s_ctx->pd, memgt->application.address,
-		memgt->application.length, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE ) );
-		memgt->rdma_recv_region = (char*)memgt->application.address;
-	}
-	else{
-		TEST_Z( memgt->rdma_send_mr = ibv_reg_mr( s_ctx->pd, memgt->application.address,
-		memgt->application.length, IBV_ACCESS_LOCAL_WRITE ) );
-		memgt->rdma_send_region = (char*)memgt->application.address;
-	}
+	TEST_Z( memgt->rdma_recv_mr = ibv_reg_mr( s_ctx->pd, memgt->application.address,
+	memgt->application.length/2, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE ) );
+	memgt->rdma_recv_region = (char*)memgt->rdma_recv_mr->addr;
+
+	TEST_Z( memgt->rdma_send_mr = ibv_reg_mr( s_ctx->pd, memgt->application.address+memgt->application.length/2,
+	memgt->application.length/2, IBV_ACCESS_LOCAL_WRITE ) );
+	memgt->rdma_send_region = (char*)memgt->rdma_send_mr->addr;
 }
 
 void post_recv( struct rdma_management *rdma, int qp_id, ull tid, int offset, int recv_size)
@@ -480,6 +478,55 @@ void post_send( struct rdma_management *rdma, int qp_id, ull tid, int offset, in
 	TEST_NZ(ibv_post_send(rdma->qpmgt->qp[qp_id], &wr, &bad_wr));
 }
 
+void post_rdma_read_syn( int qp_id, struct task_backup_syn *task )
+{
+	struct ibv_send_wr wr, *bad_wr = NULL;
+	struct ibv_sge sge[10];
+	
+	memset(&wr, 0, sizeof(wr));
+	
+	wr.wr_id = (uintptr_t)task;
+	wr.opcode = IBV_WR_RDMA_READ;
+	wr.send_flags = IBV_SEND_SIGNALED;
+	wr.wr.rdma.remote_addr = (uintptr_t)task->remote_sge.address;
+	wr.wr.rdma.rkey = rd_memgt->peer_mr.rkey;
+	//printf("write remote add: %p\n", task->remote_sge.address);
+	
+	wr.sg_list = sge;
+	wr.num_sge = 1;
+	
+	sge[0].addr = (uintptr_t)task->local_sge.address;
+	sge[0].length = task->local_sge.length;
+	sge[0].lkey = rd_memgt->rdma_recv_mr->lkey;
+	
+	TEST_NZ(ibv_post_send(rd_qpmgt->qp[qp_id], &wr, &bad_wr));
+	//printf("rdma write ok\n");
+}
+
+void post_rdma_read_syn( int qp_id, struct task_backup_syn *task )
+{
+	struct ibv_send_wr wr, *bad_wr = NULL;
+	struct ibv_sge sge[10];
+	
+	memset(&wr, 0, sizeof(wr));
+	
+	wr.wr_id = (uintptr_t)task;
+	wr.opcode = IBV_WR_RDMA_READ;
+	wr.send_flags = IBV_SEND_SIGNALED;
+	wr.wr.rdma.remote_addr = (uintptr_t)task->remote_sge.address;
+	wr.wr.rdma.rkey = rd_memgt->peer_mr.rkey;
+	//printf("write remote add: %p\n", task->remote_sge.address);
+	
+	wr.sg_list = sge;
+	wr.num_sge = 1;
+	
+	sge[0].addr = (uintptr_t)task->local_sge.address;
+	sge[0].length = task->local_sge.length;
+	sge[0].lkey = rd_memgt->rdma_recv_mr->lkey;
+	
+	TEST_NZ(ibv_post_send(rd_qpmgt->qp[qp_id], &wr, &bad_wr));
+	//printf("rdma write ok\n");
+}
 
 void die(const char *reason)
 {
@@ -566,4 +613,23 @@ double elapse_sec()
     gettimeofday(&current_tv,NULL);
     return (double)(current_tv.tv_sec)*1000000.0+\
 	(double)(current_tv.tv_usec);
+}
+
+void get_args()
+{
+	FILE *fp = NULL;
+    fp = fopen("config", "r");
+	if( fp == NULL ){
+		printf("Cannot open config file\n");
+		return ;
+	}
+	char s[100];
+	while( fscanf(fp, "%s", s) != EOF ){
+		int x;
+		fscanf(fp, "%d", &x);
+		if( strcmp( s, "ib_gid" ) == 0 ) ib_gid = x;
+		if( strcmp( s, "test_count_per_thread" ) == 0 ) test_count_per_thread = x;
+		if( strcmp( s, "thread_number" ) == 0 ) thread_number = x;
+	}
+	fclose(fp);
 }
