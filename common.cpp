@@ -10,7 +10,6 @@ int bind_port = 45679;
 int BUFFER_SIZE = 2*1024*1024;
 int BUFFER_SIZE_EXTEND = 1*1024*1024;
 int RDMA_BUFFER_SIZE = 1024*1024;
-int thread_number = 1;
 int connect_number = 1;
 int ctrl_number = 0;
 int cq_ctrl_num = 0;
@@ -25,6 +24,7 @@ int ib_port = 1;
 int ib_gid = 3;
 int test_count_per_thread = 1000;
 int thread_number = 8;
+int rpc_type = 0;
 
 int buffer_per_size;
 
@@ -57,7 +57,7 @@ send buffer: BUFFER_SIZE/buffer_per_size
 
 int sock;
 
-int resources_create(char *ip_address, struct rdma_management *rdma )
+int resources_create(char *ip_address, struct rdma_management *rdma, int id )
 {	
 	rdma->s_ctx = ( struct connection * )malloc( sizeof( struct connection ) );
 	
@@ -73,23 +73,25 @@ int resources_create(char *ip_address, struct rdma_management *rdma )
 	//char *dev_name = "mlx5_1";
 	
 	/* if client side */
-	if ( end == 0 ) {
-		sock = sock_client_connect(ip_address, bind_port);
-		if (sock < 0) {
-			fprintf(stderr, "failed to establish TCP connection to server %s, port %d\n", 
-				ip_address, bind_port);
-			return -1;
-		}
-	} else {
-		fprintf(stdout, "waiting on port %d for TCP connection\n", bind_port);
+	if( id == 0 ) {
+        if (end == 0) {
+            sock = sock_client_connect(ip_address, bind_port);
+            if (sock < 0) {
+                fprintf(stderr, "failed to establish TCP connection to server %s, port %d\n",
+                        ip_address, bind_port);
+                return -1;
+            }
+        } else {
+            fprintf(stdout, "waiting on port %d for TCP connection\n", bind_port);
 
-		sock = sock_daemon_connect(bind_port);
-		if (sock < 0) {
-			fprintf(stderr, "failed to establish TCP connection with client on port %d\n", 
-				bind_port);
-			return -1;
-		}
-	}
+            sock = sock_daemon_connect(bind_port);
+            if (sock < 0) {
+                fprintf(stderr, "failed to establish TCP connection with client on port %d\n",
+                        bind_port);
+                return -1;
+            }
+        }
+    }
 
 	fprintf(stdout, "TCP connection was established\n");
 
@@ -308,10 +310,10 @@ int connect_qp(struct rdma_management *rdma, struct ibv_qp *myqp, int id)
 	local_con_data.lid    = rdma->s_ctx->port_attr.lid;
 	memcpy( local_con_data.remoteGid, rdma->s_ctx->gid.raw, 16*sizeof(uint8_t) );
 
-	fprintf(stdout, "\nLocal LID        = 0x%x\n", rdma->s_ctx->port_attr.lid);
-	fprintf(stdout, "local QP number = 0x%x\n", myqp->qp_num);
-	fprintf(stdout, "local LID       = 0x%x\n", rdma->s_ctx->port_attr.lid);
-	print_GID( local_con_data.remoteGid );
+//	fprintf(stdout, "\nLocal LID        = 0x%x\n", rdma->s_ctx->port_attr.lid);
+//	fprintf(stdout, "local QP number = 0x%x\n", myqp->qp_num);
+//	fprintf(stdout, "local LID       = 0x%x\n", rdma->s_ctx->port_attr.lid);
+//	print_GID( local_con_data.remoteGid );
 	
 	if (sock_sync_data(sock, (end==0), sizeof(struct cm_con_data_t), &local_con_data, &tmp_con_data) < 0) {
 		fprintf(stderr, "failed to exchange connection data between sides\n");
@@ -322,9 +324,9 @@ int connect_qp(struct rdma_management *rdma, struct ibv_qp *myqp, int id)
 	remote_con_data.lid    = tmp_con_data.lid;
 	memcpy( remote_con_data.remoteGid, tmp_con_data.remoteGid, 16*sizeof(uint8_t) );
 
-	fprintf(stdout, "Remote QP number = 0x%x\n", remote_con_data.qp_num);
-	fprintf(stdout, "Remote LID       = 0x%x\n", remote_con_data.lid);
-	print_GID( remote_con_data.remoteGid );
+//	fprintf(stdout, "Remote QP number = 0x%x\n", remote_con_data.qp_num);
+//	fprintf(stdout, "Remote LID       = 0x%x\n", remote_con_data.lid);
+//	print_GID( remote_con_data.remoteGid );
 
 	/* modify the QP to RTR */
 	rc = modify_qp_to_rtr(myqp, remote_con_data.qp_num, remote_con_data.lid, remote_con_data.remoteGid, rdma->s_ctx);
@@ -422,20 +424,20 @@ void register_memory( struct memory_management *memgt, struct connection *s_ctx,
 {
 	memgt->recv_buffer = (char *)malloc(BUFFER_SIZE);
 	TEST_Z( memgt->recv_mr = ibv_reg_mr( s_ctx->pd, memgt->recv_buffer,
-	BUFFER_SIZE, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE ) );
+	BUFFER_SIZE, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ) );
 	
 	memgt->send_buffer = (char *)malloc(BUFFER_SIZE);
 	TEST_Z( memgt->send_mr = ibv_reg_mr( s_ctx->pd, memgt->send_buffer,
-	BUFFER_SIZE, IBV_ACCESS_LOCAL_WRITE ) );
+	BUFFER_SIZE, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ ) );
 	
 	//buffer_per_size = request_size;
 	
 	TEST_Z( memgt->rdma_recv_mr = ibv_reg_mr( s_ctx->pd, memgt->application.address,
-	memgt->application.length/2, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE ) );
+	memgt->application.length/2, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ ) );
 	memgt->rdma_recv_region = (char*)memgt->rdma_recv_mr->addr;
 
 	TEST_Z( memgt->rdma_send_mr = ibv_reg_mr( s_ctx->pd, memgt->application.address+memgt->application.length/2,
-	memgt->application.length/2, IBV_ACCESS_LOCAL_WRITE ) );
+	memgt->application.length/2, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ ) );
 	memgt->rdma_send_region = (char*)memgt->rdma_send_mr->addr;
 }
 
@@ -476,56 +478,6 @@ void post_send( struct rdma_management *rdma, int qp_id, ull tid, int offset, in
 	sge.lkey = rdma->memgt->send_mr->lkey;
 	
 	TEST_NZ(ibv_post_send(rdma->qpmgt->qp[qp_id], &wr, &bad_wr));
-}
-
-void post_rdma_read_syn( int qp_id, struct task_backup_syn *task )
-{
-	struct ibv_send_wr wr, *bad_wr = NULL;
-	struct ibv_sge sge[10];
-	
-	memset(&wr, 0, sizeof(wr));
-	
-	wr.wr_id = (uintptr_t)task;
-	wr.opcode = IBV_WR_RDMA_READ;
-	wr.send_flags = IBV_SEND_SIGNALED;
-	wr.wr.rdma.remote_addr = (uintptr_t)task->remote_sge.address;
-	wr.wr.rdma.rkey = rd_memgt->peer_mr.rkey;
-	//printf("write remote add: %p\n", task->remote_sge.address);
-	
-	wr.sg_list = sge;
-	wr.num_sge = 1;
-	
-	sge[0].addr = (uintptr_t)task->local_sge.address;
-	sge[0].length = task->local_sge.length;
-	sge[0].lkey = rd_memgt->rdma_recv_mr->lkey;
-	
-	TEST_NZ(ibv_post_send(rd_qpmgt->qp[qp_id], &wr, &bad_wr));
-	//printf("rdma write ok\n");
-}
-
-void post_rdma_read_syn( int qp_id, struct task_backup_syn *task )
-{
-	struct ibv_send_wr wr, *bad_wr = NULL;
-	struct ibv_sge sge[10];
-	
-	memset(&wr, 0, sizeof(wr));
-	
-	wr.wr_id = (uintptr_t)task;
-	wr.opcode = IBV_WR_RDMA_READ;
-	wr.send_flags = IBV_SEND_SIGNALED;
-	wr.wr.rdma.remote_addr = (uintptr_t)task->remote_sge.address;
-	wr.wr.rdma.rkey = rd_memgt->peer_mr.rkey;
-	//printf("write remote add: %p\n", task->remote_sge.address);
-	
-	wr.sg_list = sge;
-	wr.num_sge = 1;
-	
-	sge[0].addr = (uintptr_t)task->local_sge.address;
-	sge[0].length = task->local_sge.length;
-	sge[0].lkey = rd_memgt->rdma_recv_mr->lkey;
-	
-	TEST_NZ(ibv_post_send(rd_qpmgt->qp[qp_id], &wr, &bad_wr));
-	//printf("rdma write ok\n");
 }
 
 void die(const char *reason)
@@ -579,8 +531,11 @@ int destroy_connection( struct rdma_management *rdma )
 	free(rdma->s_ctx->cq_ctrl); rdma->s_ctx->cq_ctrl = NULL;
 	TEST_NZ(ibv_destroy_comp_channel(rdma->s_ctx->comp_channel));
 	TEST_NZ(ibv_destroy_comp_channel(rdma->s_ctx->mem_channel));
-	TEST_NZ(ibv_dealloc_pd(rdma->s_ctx->pd));
-	TEST_NZ(ibv_close_device(rdma->s_ctx->ctx));
+	// TEST_NZ(ibv_dealloc_pd(rdma->s_ctx->pd));
+	// TEST_NZ(ibv_close_device(rdma->s_ctx->ctx));
+	
+	ibv_dealloc_pd(rdma->s_ctx->pd);
+	ibv_close_device(rdma->s_ctx->ctx);
 	//close(sock);
 	free(rdma->s_ctx);
 	return 0;
@@ -630,6 +585,8 @@ void get_args()
 		if( strcmp( s, "ib_gid" ) == 0 ) ib_gid = x;
 		if( strcmp( s, "test_count_per_thread" ) == 0 ) test_count_per_thread = x;
 		if( strcmp( s, "thread_number" ) == 0 ) thread_number = x;
+		if( strcmp( s, "type" ) == 0 ) rpc_type = x;
+
 	}
 	fclose(fp);
 }

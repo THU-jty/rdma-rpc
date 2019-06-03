@@ -133,7 +133,6 @@ extern int BUFFER_SIZE;
 extern int TOTAL_SIZE;
 extern int BUFFER_SIZE_EXTEND;
 extern int RDMA_BUFFER_SIZE;
-extern int thread_number;
 extern int connect_number;
 extern int buffer_per_size;
 extern int ctrl_number;
@@ -151,6 +150,7 @@ extern ull magic_number;
 extern int ib_gid;
 extern int test_count_per_thread;
 extern int thread_number;
+extern int rpc_type;
 /* active */
 extern int resend_limit;
 extern int request_size;
@@ -165,7 +165,7 @@ extern int scatter_pool_size;
 extern int ScatterList_pool_size;
 extern int request_pool_size;
 
-int resources_create(char *ip_address, struct rdma_management *rdma );
+int resources_create(char *ip_address, struct rdma_management *rdma, int id );
 void print_GID( uint8_t *a );
 int connect_qp(struct rdma_management *rdma, struct ibv_qp *myqp, int id);
 void build_connection(struct rdma_management *rdma, int tid);
@@ -179,5 +179,6 @@ int destroy_qp_management( struct rdma_management *rdma );
 int destroy_connection( struct rdma_management *rdma );
 int destroy_memory_management( struct rdma_management *rdma, int end );
 double elapse_sec();
+void get_args();
 
 #endif

@@ -21,7 +21,7 @@ sum_tran, sbf_time, callback_time, get_request;
 extern int d_count, send_new_id, rq_sub, mx, q_count;
 extern struct target_rate polling_active;
 
-void initialize_active( void *address, int length, char *ip_address );
+void initialize_active( void *address, int length, char *ip_address, struct rdma_management *rdma, int id );
 int on_event(struct rdma_cm_event *event, int tid);
 void *working_thread(void *arg);
 void *completion_active();
@@ -31,25 +31,7 @@ int clean_send_buffer( struct package_active *now );
 int clean_package( struct package_active *now );
 void *memory_ctrl_active();
 
-// int on_event(struct rdma_cm_event *event, int tid)
-// {
-	// int r = 0;
-    // //printf("on event %d\n", event->event);
-	// if (event->event == RDMA_CM_EVENT_ADDR_RESOLVED)
-        // r = on_addr_resolved(event->id, tid);
-    // else if (event->event == RDMA_CM_EVENT_ROUTE_RESOLVED)
-      // r = on_route_resolved(event->id, tid);
-    // else if (event->event == RDMA_CM_EVENT_ESTABLISHED)
-      // r = on_connection(event->id, tid);
-	// // else if (event->event == RDMA_CM_EVENT_DISCONNECTED)
-	  // // r = on_disconnect(event->id);
-	// else
-	  // die("on_event: unknown event.");
-
-	// return r;
-// }
-
-void initialize_active( void *address, int length, char *ip_address, struct rdma_management *rdma )
+void initialize_active( void *address, int length, char *ip_address, struct rdma_management *rdma, int id )
 {
 	end = 0;
 	rdma->memgt = ( struct memory_management * ) malloc( sizeof( struct memory_management ) );
@@ -61,7 +43,7 @@ void initialize_active( void *address, int length, char *ip_address, struct rdma
 	/*建立连接，数量为connect_number，\
 	每次通过第0条链路传输port及ibv_mr，第0条链路端口固定为bind_port*/
 	struct ibv_wc wc;
-	resources_create( ip_address, rdma );
+	resources_create( ip_address, rdma, id );
 	
 	post_recv( rdma, 0, 20, 0, sizeof(struct ibv_mr));
 	int tmp = get_wc( rdma, &wc );
@@ -70,12 +52,16 @@ void initialize_active( void *address, int length, char *ip_address, struct rdma
 	printf("peer add: %p length: %d\n", rdma->memgt->peer_mr.addr,
 	rdma->memgt->peer_mr.length);
 	
+	memcpy( rdma->memgt->send_buffer, rdma->memgt->rdma_recv_mr, sizeof(struct ibv_mr) );
 	post_send( rdma, 0, 50, 0, sizeof(struct ibv_mr), 0 );
 	
+	int ss = get_wc( rdma, &wc );
 	printf("add: %p length: %d\n", rdma->memgt->rdma_recv_mr->addr,
 	rdma->memgt->rdma_recv_mr->length);
 
 	fprintf(stderr, "create pthread pool end\n");
+	
+	bind_port ++;
 }
 
 void finalize_active( struct rdma_management *rdma )
@@ -94,7 +80,7 @@ void finalize_active( struct rdma_management *rdma )
 	fprintf(stderr, "finalize end\n");
 }
 
-struct rdma_management rdma[100];
+struct rdma_management rrdma[100];
 
 struct mythread
 {
@@ -109,22 +95,22 @@ pthread_cond_t share_cond;
 
 int tmp[100];
 
-void working_fasst( void *f )
+void *working_fasst( void *f )
 {
 	int id = *(int *)f;
 	printf("testing thread %d ready\n", id);
-	struct rdma_management *rdm = rdma[id];
-	struct mythread *my = Thread[id];
+	struct rdma_management *rdma = &rrdma[id];
+	struct mythread *my = &Thread[id];
 	pthread_mutex_init( &my->mutex, NULL );
 	pthread_cond_init( &my->cond, NULL );
 	pthread_mutex_lock( &my->mutex );
-	pthread_cond_wait( &share_cond, &my->mutex );
+	pthread_cond_wait( &my->cond, &my->mutex );
 	pthread_mutex_unlock( &my->mutex );
 	printf("testing thread %d begin\n", id);
 	
 	double sum = 0.0;
 	int count = test_count_per_thread;
-	double st = elapse_sec(), ed;
+	
 	for( int i = 0; i < 10; i ++ ){
 		struct ibv_recv_wr wr, *bad_wr = NULL;
 		struct ibv_sge sge;
@@ -139,9 +125,9 @@ void working_fasst( void *f )
 		
 		TEST_NZ(ibv_post_recv(rdma->qpmgt->qp[0], &wr, &bad_wr));
 	}
-		
+	
+	double st = elapse_sec(), ed;
 	for( int i = 0; i < count; i ++ ){
-		double st, ed;
 		//send a req
 		struct ibv_send_wr wr, *bad_wr = NULL;
 		struct ibv_sge sge;
@@ -163,7 +149,7 @@ void working_fasst( void *f )
 		struct ibv_wc *wc, *wc_array; 
 		wc_array = ( struct ibv_wc * )malloc( sizeof(struct ibv_wc)*20 );
 		int fl = 0;
-		cq = rdm->s_ctx->cq_data[0];
+		cq = rdma->s_ctx->cq_data[0];
 		while(!fl){
 			int num = ibv_poll_cq(cq, 10, wc_array);
 			if( num < 0 ) continue;
@@ -191,24 +177,25 @@ void working_fasst( void *f )
 			}
 		}
 		ed = elapse_sec();
+		//printf("req %d %.2f %.2f\n", i, ed, st);
 		sum += ed-st;
 		st = ed;
 	}
 	my->avglat = sum/test_count_per_thread;
-	printf("test thread %d over\n", id);
-	return ;
+	printf("test thread %d over avg %.2fus\n", id, my->avglat);
+	return NULL;
 }
 
-void working_fasst( void *f )
+void *working_pilaf( void *f )
 {
 	int id = *(int *)f;
 	printf("testing thread %d ready\n", id);
-	struct rdma_management *rdm = rdma[id];
-	struct mythread *my = Thread[id];
+	struct rdma_management *rdma = &rrdma[id];
+	struct mythread *my = &Thread[id];
 	pthread_mutex_init( &my->mutex, NULL );
 	pthread_cond_init( &my->cond, NULL );
 	pthread_mutex_lock( &my->mutex );
-	pthread_cond_wait( &share_cond, &my->mutex );
+	pthread_cond_wait( &my->cond, &my->mutex );
 	pthread_mutex_unlock( &my->mutex );
 	printf("testing thread %d begin\n", id);
 	
@@ -217,22 +204,21 @@ void working_fasst( void *f )
 	double st = elapse_sec(), ed;
 		
 	for( int i = 0; i < count; i ++ ){
-		double st, ed;
 		//read key
 		struct ibv_send_wr wr, *bad_wr = NULL;
 		struct ibv_sge sge;
 		memset(&wr, 0, sizeof(wr));
-		wr.wr_id = 0;
+		wr.wr_id = 2*i;
 		wr.opcode = IBV_WR_RDMA_READ;
 		wr.sg_list = &sge;
 		wr.send_flags = IBV_SEND_SIGNALED;
 		wr.num_sge = 1;
 		wr.wr.rdma.remote_addr = (uintptr_t)rdma->memgt->peer_mr.addr;
-		wr.wr.rdma.rkey = rd_memgt->peer_mr.rkey;
+		wr.wr.rdma.rkey = rdma->memgt->peer_mr.rkey;
 		
-		sge.addr = (uintptr_t)rdma->memgt->recv_buffer;
-		sge.length = 8;
-		sge.lkey = rdma->memgt->recv_mr->lkey;
+		sge.addr = (uintptr_t)rdma->memgt->rdma_recv_mr->addr;
+		sge.length = request_size;
+		sge.lkey = rdma->memgt->rdma_recv_mr->lkey;
 		
 		TEST_NZ(ibv_post_send(rdma->qpmgt->qp[0], &wr, &bad_wr));
 		
@@ -241,65 +227,70 @@ void working_fasst( void *f )
 		struct ibv_wc *wc, *wc_array; 
 		wc_array = ( struct ibv_wc * )malloc( sizeof(struct ibv_wc)*20 );
 		int fl = 0;
-		cq = rdm->s_ctx->cq_data[0];
+		cq = rdma->s_ctx->cq_data[0];
 		while(!fl){
 			int num = ibv_poll_cq(cq, 10, wc_array);
 			if( num < 0 ) continue;
 			for( int k = 0; k < num; k ++ ){
-				wc = &wc_array[k];
-				if( wc->opcode == IBV_WR_RDMA_READ ){
+                //printf("polling %d\n", num);
+			    wc = &wc_array[k];
+				//printf("%d %d\n", wc->opcode, wc->wr_id );
+			    if( wc->opcode == IBV_WC_RDMA_READ ){
 					if( wc->status != IBV_WC_SUCCESS ){
 						printf("recv error %d!\n", id);
-						
 					}
+                    //printf("xxx");
+					fl = 1;
+                    break;
 				}
 			}
 		}
-		
-		// struct ibv_send_wr wr, *bad_wr = NULL;
-		// struct ibv_sge sge;
-		memset(&wr, 0, sizeof(wr));
-		wr.wr_id = 0;
-		wr.opcode = IBV_WR_RDMA_READ;
-		wr.sg_list = &sge;
-		wr.send_flags = IBV_SEND_SIGNALED;
-		wr.num_sge = 1;
-		wr.wr.rdma.remote_addr = (uintptr_t)rdma->memgt->peer_mr.addr+request_size;
-		wr.wr.rdma.rkey = rd_memgt->peer_mr.rkey;
-		
-		sge.addr = (uintptr_t)rdma->memgt->recv_buffer;
-		sge.length = request_size;
-		sge.lkey = rdma->memgt->recv_mr->lkey;
-		
-		TEST_NZ(ibv_post_send(rdma->qpmgt->qp[0], &wr, &bad_wr));
-		
-		//polling for a read CQ
-		// struct ibv_cq *cq;
-		// struct ibv_wc *wc, *wc_array; 
-		wc_array = ( struct ibv_wc * )malloc( sizeof(struct ibv_wc)*20 );
-		fl = 0;
-		cq = rdm->s_ctx->cq_data[0];
-		while(!fl){
-			int num = ibv_poll_cq(cq, 10, wc_array);
-			if( num < 0 ) continue;
-			for( int k = 0; k < num; k ++ ){
-				wc = &wc_array[k];
-				if( wc->opcode == IBV_WR_RDMA_READ ){
-					if( wc->status != IBV_WC_SUCCESS ){
-						printf("recv error %d!\n", id);
-						
-					}
-				}
-			}
-		}
-		
-		ed = elapse_sec();
-		sum += ed-st;
-		st = ed;
+
+        memset(&wr, 0, sizeof(wr));
+        wr.wr_id = 2*i+1;
+        wr.opcode = IBV_WR_RDMA_READ;
+        wr.sg_list = &sge;
+        wr.send_flags = IBV_SEND_SIGNALED;
+        wr.num_sge = 1;
+        wr.wr.rdma.remote_addr = (uintptr_t)rdma->memgt->peer_mr.addr+request_size;
+        wr.wr.rdma.rkey = rdma->memgt->peer_mr.rkey;
+
+        sge.addr = (uintptr_t)rdma->memgt->rdma_recv_mr->addr;
+        sge.length = request_size;
+        sge.lkey = rdma->memgt->rdma_recv_mr->lkey;
+
+        TEST_NZ(ibv_post_send(rdma->qpmgt->qp[0], &wr, &bad_wr));
+
+        //printf("polling\n");
+        //polling for a read CQ
+        // struct ibv_cq *cq;
+        // struct ibv_wc *wc, *wc_array;
+        wc_array = ( struct ibv_wc * )malloc( sizeof(struct ibv_wc)*20 );
+        fl = 0;
+        cq = rdma->s_ctx->cq_data[0];
+        while(!fl){
+            int num = ibv_poll_cq(cq, 10, wc_array);
+            if( num < 0 ) continue;
+            for( int k = 0; k < num; k ++ ){
+                //printf("polling %d\n", num);
+                wc = &wc_array[k];
+                if( wc->opcode == IBV_WC_RDMA_READ ){
+                    if( wc->status != IBV_WC_SUCCESS ){
+                        printf("recv error %d!\n", id);
+                    }
+                    fl = 1;
+                    break;
+                }
+            }
+        }
+
+        ed = elapse_sec();
+        sum += ed-st;
+        st = ed;
 	}
 	my->avglat = sum/test_count_per_thread;
-	printf("test thread %d over\n", id);
-	return ;
+	printf("test thread %d over avg %.2fus\n", id, my->avglat);
+	return NULL;
 }
 
 int main( int argc, char **argv )
@@ -311,33 +302,38 @@ int main( int argc, char **argv )
 	}
     //ib_gid = atoi(argv[2]);
     get_args();
-	
+
+	//pthread_cond_init( &share_cond, NULL );
 	for( int i = 0; i < thread_number; i ++ ){
 		SL.address = ( void * )malloc( RDMA_BUFFER_SIZE );
 		SL.length = RDMA_BUFFER_SIZE;
-		initialize_active( SL.address, SL.length, argv[1], &rdma[i] );
+		initialize_active( SL.address, SL.length, argv[1], &rrdma[i], i );
 		tmp[i] = i;
-		pthread_create( &Thread[i]->t, NULL, working_fasst, (void*)&tmp[i] );
-		//pthread_create( &Thread[i]->t, NULL, working_pilaf, (void*)&tmp[i] );
+		if( rpc_type == 0 )
+		    pthread_create( &Thread[i].t, NULL, working_fasst, (void*)&tmp[i] );
+        if( rpc_type == 1 )
+		    pthread_create( &Thread[i].t, NULL, working_pilaf, (void*)&tmp[i] );
 	}
-	
-	pthread_cond_init( &share_cond, NULL );
+
 	sleep(1);
-	pthread_cond_broadcast( &share_cond );
+	printf("begin notify all\n");
+	for( int i = 0; i < thread_number; i ++ ){
+	    pthread_cond_signal( &Thread[i].cond );
+	}
 	double st = elapse_sec(), ed;
 	double tot = 0.0;
 	for( int i = 0; i < thread_number; i ++ ){
-		pthread_join( Thread[i]->t, NULL );
+		pthread_join( Thread[i].t, NULL );
 	}
 	ed = elapse_sec();
 	
 	for( int i = 0; i < thread_number; i ++ ){
-		finalize_active( &rdma[i] );
-		tot += Thread[i]->avglat;
+		finalize_active( &rrdma[i] );
+		tot += Thread[i].avglat;
 	}
 	
 	tot /= thread_number;
 	int num = thread_number*test_count_per_thread;
-	printf("test req %d IOPS %.2fk/s latency %.fus\n", 
-	num, num*1.0/(ed-st)*1e3, tot)
+	printf("test req %d IOPS %.2fk/s latency %.6fus\n",
+	num, num*1.0/(ed-st)*1e3, tot);
 }

@@ -81,7 +81,7 @@ int sock_client_connect(
 {
 	struct addrinfo *res, *t;
 	struct addrinfo hints = {
-		.ai_flags = 0,
+		.ai_flags = AI_PASSIVE,
 		.ai_family   = AF_UNSPEC,
 		.ai_socktype = SOCK_STREAM
 	};
