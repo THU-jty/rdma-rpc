@@ -293,6 +293,100 @@ void *working_pilaf( void *f )
 	return NULL;
 }
 
+void *working_octps( void *f )
+{
+    int id = *(int *)f;
+    printf("testing thread %d ready\n", id);
+    struct rdma_management *rdma = &rrdma[id];
+    struct mythread *my = &Thread[id];
+    pthread_mutex_init( &my->mutex, NULL );
+    pthread_cond_init( &my->cond, NULL );
+    pthread_mutex_lock( &my->mutex );
+    pthread_cond_wait( &my->cond, &my->mutex );
+    pthread_mutex_unlock( &my->mutex );
+    printf("testing thread %d begin\n", id);
+
+    double sum = 0.0;
+    int count = test_count_per_thread;
+
+    for( int i = 0; i < 10; i ++ ){
+        struct ibv_recv_wr wr, *bad_wr = NULL;
+        struct ibv_sge sge;
+        wr.wr_id = i;
+        wr.next = NULL;
+        wr.sg_list = &sge;
+        wr.num_sge = 1;
+
+        sge.addr = (uintptr_t)rdma->memgt->recv_buffer+request_size*i;
+        sge.length = 0;
+        sge.lkey = rdma->memgt->recv_mr->lkey;
+
+        TEST_NZ(ibv_post_recv(rdma->qpmgt->qp[0], &wr, &bad_wr));
+    }
+
+    double st = elapse_sec(), ed;
+    for( int i = 0; i < count; i ++ ){
+        //send a req
+        struct ibv_send_wr wr, *bad_wr = NULL;
+        struct ibv_sge sge;
+        memset(&wr, 0, sizeof(wr));
+        wr.wr_id = 0;
+        wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
+        wr.sg_list = &sge;
+        wr.send_flags = IBV_SEND_SIGNALED;
+        wr.num_sge = 1;
+        wr.wr.rdma.remote_addr = (uintptr_t)rdma->memgt->peer_mr.addr;
+        wr.wr.rdma.rkey = rdma->memgt->peer_mr.rkey;
+
+        sge.addr = (uintptr_t)rdma->memgt->send_buffer;
+        sge.length = request_size;
+        sge.lkey = rdma->memgt->send_mr->lkey;
+
+        TEST_NZ(ibv_post_send(rdma->qpmgt->qp[0], &wr, &bad_wr));
+
+        //polling for a recv
+        struct ibv_cq *cq;
+        struct ibv_wc *wc, *wc_array;
+        wc_array = ( struct ibv_wc * )malloc( sizeof(struct ibv_wc)*20 );
+        int fl = 0;
+        cq = rdma->s_ctx->cq_data[0];
+        while(!fl){
+            int num = ibv_poll_cq(cq, 10, wc_array);
+            if( num < 0 ) continue;
+            for( int k = 0; k < num; k ++ ){
+                wc = &wc_array[k];
+                if( wc->opcode == IBV_WC_RECV || wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM ){
+                    if( wc->status != IBV_WC_SUCCESS ){
+                        printf("recv error %d!\n", id);
+
+                    }
+                    fl = 1;
+                    struct ibv_recv_wr wr, *bad_wr = NULL;
+                    struct ibv_sge sge;
+                    wr.wr_id = wc->wr_id;
+                    wr.next = NULL;
+                    wr.sg_list = &sge;
+                    wr.num_sge = 1;
+
+                    sge.addr = (uintptr_t)rdma->memgt->recv_buffer+request_size*wc->wr_id;
+                    sge.length = 0;
+                    sge.lkey = rdma->memgt->recv_mr->lkey;
+
+                    TEST_NZ(ibv_post_recv(rdma->qpmgt->qp[0], &wr, &bad_wr));
+                }
+            }
+        }
+        ed = elapse_sec();
+        //printf("req %d %.2f %.2f\n", i, ed, st);
+        sum += ed-st;
+        st = ed;
+    }
+    my->avglat = sum/test_count_per_thread;
+    printf("test thread %d over avg %.2fus\n", id, my->avglat);
+    return NULL;
+}
+
+
 int main( int argc, char **argv )
 {
 	struct ScatterList SL;
@@ -313,7 +407,9 @@ int main( int argc, char **argv )
 		    pthread_create( &Thread[i].t, NULL, working_fasst, (void*)&tmp[i] );
         if( rpc_type == 1 )
 		    pthread_create( &Thread[i].t, NULL, working_pilaf, (void*)&tmp[i] );
-	}
+        if( rpc_type == 2 )
+            pthread_create( &Thread[i].t, NULL, working_octps, (void*)&tmp[i] );
+    }
 
 	sleep(1);
 	printf("begin notify all\n");

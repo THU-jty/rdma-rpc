@@ -586,6 +586,7 @@ void get_args()
 		if( strcmp( s, "test_count_per_thread" ) == 0 ) test_count_per_thread = x;
 		if( strcmp( s, "thread_number" ) == 0 ) thread_number = x;
 		if( strcmp( s, "type" ) == 0 ) rpc_type = x;
+		if( strcmp( s, "request_size" ) == 0 ) request_size = x;
 
 	}
 	fclose(fp);
