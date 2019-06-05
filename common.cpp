@@ -25,6 +25,8 @@ int ib_gid = 3;
 int test_count_per_thread = 1000;
 int thread_number = 8;
 int rpc_type = 0;
+int key_size = 8;
+int value_size = 4096;
 
 int buffer_per_size;
 
@@ -587,7 +589,10 @@ void get_args()
 		if( strcmp( s, "thread_number" ) == 0 ) thread_number = x;
 		if( strcmp( s, "type" ) == 0 ) rpc_type = x;
 		if( strcmp( s, "request_size" ) == 0 ) request_size = x;
+		if( strcmp( s, "key_size" ) == 0 ) key_size = x;
+		if( strcmp( s, "value_size" ) == 0 ) value_size = x;
 
 	}
+	RDMA_BUFFER_SIZE = request_size*8;
 	fclose(fp);
 }

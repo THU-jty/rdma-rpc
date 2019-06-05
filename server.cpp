@@ -89,7 +89,7 @@ void *polling_fasst(void *f)
 				swr.num_sge = 1;
 				
 				sge.addr = (uintptr_t)rdma->memgt->send_buffer;
-				sge.length = request_size;
+				sge.length = value_size;
 				sge.lkey = rdma->memgt->send_mr->lkey;
 				
 				TEST_NZ(ibv_post_send(rdma->qpmgt->qp[0], &swr, &sbad_wr));
@@ -166,7 +166,7 @@ void *polling_octps(void *f)
                 swr.wr.rdma.rkey = rdma->memgt->peer_mr.rkey;
 
                 sge.addr = (uintptr_t)rdma->memgt->send_buffer;
-                sge.length = request_size;
+                sge.length = value_size;
                 sge.lkey = rdma->memgt->send_mr->lkey;
 
                 TEST_NZ(ibv_post_send(rdma->qpmgt->qp[0], &swr, &sbad_wr));

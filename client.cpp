@@ -139,7 +139,7 @@ void *working_fasst( void *f )
 		wr.num_sge = 1;
 		
 		sge.addr = (uintptr_t)rdma->memgt->send_buffer;
-		sge.length = request_size;
+		sge.length = key_size;
 		sge.lkey = rdma->memgt->send_mr->lkey;
 		
 		TEST_NZ(ibv_post_send(rdma->qpmgt->qp[0], &wr, &bad_wr));
@@ -217,7 +217,7 @@ void *working_pilaf( void *f )
 		wr.wr.rdma.rkey = rdma->memgt->peer_mr.rkey;
 		
 		sge.addr = (uintptr_t)rdma->memgt->rdma_recv_mr->addr;
-		sge.length = request_size;
+		sge.length = key_size;
 		sge.lkey = rdma->memgt->rdma_recv_mr->lkey;
 		
 		TEST_NZ(ibv_post_send(rdma->qpmgt->qp[0], &wr, &bad_wr));
@@ -256,7 +256,7 @@ void *working_pilaf( void *f )
         wr.wr.rdma.rkey = rdma->memgt->peer_mr.rkey;
 
         sge.addr = (uintptr_t)rdma->memgt->rdma_recv_mr->addr;
-        sge.length = request_size;
+        sge.length = value_size;
         sge.lkey = rdma->memgt->rdma_recv_mr->lkey;
 
         TEST_NZ(ibv_post_send(rdma->qpmgt->qp[0], &wr, &bad_wr));
@@ -339,7 +339,7 @@ void *working_octps( void *f )
         wr.wr.rdma.rkey = rdma->memgt->peer_mr.rkey;
 
         sge.addr = (uintptr_t)rdma->memgt->send_buffer;
-        sge.length = request_size;
+        sge.length = key_size;
         sge.lkey = rdma->memgt->send_mr->lkey;
 
         TEST_NZ(ibv_post_send(rdma->qpmgt->qp[0], &wr, &bad_wr));

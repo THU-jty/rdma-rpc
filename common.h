@@ -151,6 +151,9 @@ extern int ib_gid;
 extern int test_count_per_thread;
 extern int thread_number;
 extern int rpc_type;
+extern int key_size;
+extern int value_size;
+
 /* active */
 extern int resend_limit;
 extern int request_size;
