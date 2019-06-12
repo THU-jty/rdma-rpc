@@ -9,11 +9,7 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e8a7b6af-d946-49a1-8c71-ecb48225b64c" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/client.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/client.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/common.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/common.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/server.cpp" afterDir="false" />
-    </list>
+    <list default="true" id="e8a7b6af-d946-49a1-8c71-ecb48225b64c" name="Default Changelist" comment="" />
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -78,8 +74,8 @@
           <file pinned="false" current-in-tab="true">
             <entry file="file://$PROJECT_DIR$/common.cpp">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="393">
-                  <caret line="588" column="59" selection-start-line="588" selection-start-column="59" selection-end-line="588" selection-end-column="59" />
+                <state relative-caret-position="336">
+                  <caret line="586" column="44" selection-start-line="586" selection-start-column="44" selection-end-line="586" selection-end-column="44" />
                   <folding>
                     <element signature="e#0#19#0" expanded="true" />
                   </folding>
@@ -212,12 +208,12 @@
       <option name="presentableId" value="Default" />
       <updated>1559292080447</updated>
       <workItem from="1559292081590" duration="6252000" />
-      <workItem from="1559524854599" duration="6631000" />
+      <workItem from="1559524854599" duration="7265000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="13422000" />
+    <option name="totallyTimeSpent" value="14056000" />
   </component>
   <component name="TodoView">
     <todo-panel id="selected-file">
@@ -301,8 +297,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/common.cpp">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="393">
-          <caret line="588" column="59" selection-start-line="588" selection-start-column="59" selection-end-line="588" selection-end-column="59" />
+        <state relative-caret-position="336">
+          <caret line="586" column="44" selection-start-line="586" selection-start-column="44" selection-end-line="586" selection-end-column="44" />
           <folding>
             <element signature="e#0#19#0" expanded="true" />
           </folding>
